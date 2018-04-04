@@ -21,7 +21,7 @@ log.setLevel(DEBUG)
 
 UNAVAILABLE_STATES = ['EXPORTED', 'UNAVAIL']
 
-DeviceMaps = namedtuple('device_maps', 'block_devices zpools zfs props')
+DeviceMaps = namedtuple('device_maps', ['block_devices', 'zed'])
 
 # Python errno doesn't include this code
 errno.NO_MEDIA_ERRNO = 123
@@ -143,11 +143,7 @@ def get_host_devices(fqdn, _data):
     devices = json.loads(host_data)
 
     try:
-        device_maps = DeviceMaps(
-            devices["blockDevices"],  # dict
-            devices["zed"]["zpools"],  # dict
-            devices["zed"]["zfs"],  # list
-            devices["zed"]["props"])  # list
+        device_maps = DeviceMaps(devices["blockDevices"], devices["zed"])
     except KeyError as e:
         log.error('badly formatted data found for {} : {} ({})'.format(
             fqdn, devices, e))
@@ -376,10 +372,9 @@ def parse_sys_block(device_map):
     return [vgs, lvs, mds, local_fs, block_device_nodes]
 
 
-def parse_zpools(zpool_map, zfs_objs, block_device_nodes):
+def parse_zpools(zed, block_device_nodes):
     """
     :param zpool_map: dictionary of pools keyed on guid
-    :param zfs_objs: list of dataset dictionaries
     :param block_device_nodes: dictionary of block device dictionaries keyed on major minor
     :return: list of pools datasets and block_device_nodes
     """
@@ -415,8 +410,7 @@ def parse_zpools(zpool_map, zfs_objs, block_device_nodes):
                 "size": 0,  # fixme
                 "drives": drive_mms
             }
-            for ds in
-            [d for d in zfs_objs if int(d['poolGuid'], 16) == int(guid, 16)]
+            for ds in [d for d in pool.datasets]
         }
 
         _devs = {}
@@ -473,7 +467,7 @@ def parse_zpools(zpool_map, zfs_objs, block_device_nodes):
 
     map(populate,
         filter(lambda x: x['state'] not in UNAVAILABLE_STATES,
-               zpool_map.itervalues()))
+               zed.itervalues()))
 
     return [zpools, datasets, block_device_nodes]
 
@@ -522,7 +516,7 @@ def discover_zpools(all_devs, _data):
         try:
             # verify pool is imported
             pools = pipe(
-                maps['zed']['zpools'].itervalues(),
+                maps['zed'].itervalues(),
                 cfilter(lambda pool: pool['state'] not in UNAVAILABLE_STATES),
                 cfilter(match_drives), list)
         except KeyError as e:
@@ -561,8 +555,7 @@ def discover_zpools(all_devs, _data):
     [
         all_devs[k].update(v) for k, v in zip(
             ['zfspools', 'zfsdatasets', 'devs'],
-            parse_zpools(other_zpools_zfs['zpools'], other_zpools_zfs['zfs'],
-                         all_devs['devs']))
+            parse_zpools(other_zpools_zfs['zpools'], all_devs['devs']))
     ]
 
     del _data
@@ -584,8 +577,7 @@ def get_block_devices(fqdn):
         return {}
 
     devs_list = parse_sys_block(device_maps.block_devices)
-    devs_list.extend(
-        parse_zpools(device_maps.zpools, device_maps.zfs, devs_list.pop(-1)))
+    devs_list.extend(parse_zpools(device_maps.zed, devs_list.pop(-1)))
 
     devs_dict = dict(
         zip([
