@@ -25,8 +25,12 @@ class TestYumUpdate(TestInstallationAndUpgrade):
             # Ensure that IML notices its storage servers needs upgraded
             for host in hosts:
                 # wait for an upgrade available alert
-                self.wait_for_assert(lambda: self.assertHasAlert(host['resource_uri'],
-                                                                 of_type='UpdatesAvailableAlert'))
+                self._fetch_help(lambda: self.wait_for_assert(lambda: self.assertHasAlert(host['resource_uri'],
+                                                                 of_type='UpdatesAvailableAlert')),
+                                 ['brian.murrell@intel.com'],
+                                 "Waiting for developer inspection for UpdatesAvailableAlert.",
+                                 timeout=60*60*24*3)
+
                 alerts = self.get_list("/api/alert/", {'active': True,
                                                        'alert_type': 'UpdatesAvailableAlert'})
 
