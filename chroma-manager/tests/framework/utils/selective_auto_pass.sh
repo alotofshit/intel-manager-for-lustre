@@ -31,6 +31,7 @@ check_for_autopass() {
     else
         tests_to_skip=$(echo "$commit_message" | sed -ne '/^ *Skip-tests:/s/^ *Skip-tests: *//p')
     fi
+
     # set any environment the test run wants
     local environment
     environment=$(echo "$commit_message" | sed -ne '/^ *Environment:/s/^ *Environment: *//p')
@@ -38,6 +39,12 @@ check_for_autopass() {
         # shellcheck disable=SC2163
         # shellcheck disable=SC2086
         export ${environment?}
+    fi
+
+    # use specified module builds
+    jenkins_modules=$(echo "$commit_message" | sed -ne '/^ *Module: *jenkins\//s/^ *Module: *jenkins\/\([^:]*\): *\([0-9][0-9]*\)/http:\/\/jenkins.lotus.hpdd.lab.intel.com\/job\/\1\/\2\/arch=x86_64,distro=el7\/artifact\/artifacts\/\1-test.repo/gp')
+    if [ -n "$jenkins_modules" ]; then
+        export STORAGE_SERVER_REPOS="$jenkins_modules $STORAGE_SERVER_REPOS"
     fi
 
     local t
@@ -57,17 +64,10 @@ check_for_autopass() {
     fi
 
     # regex matches separated by |
-    supported_distro_versions="7\.[0-9]+"
+    supported_distro_versions="7\\.[0-9]+"
     if [[ ! $TEST_DISTRO_VERSION =~ $supported_distro_versions ]] && ([ -z "$UPGRADE_TEST_DISTRO" ] || [[ ! $UPGRADE_TEST_DISTRO =~ $supported_distro_versions ]]); then
       fake_test_pass "tests_skipped_because_unsupported_distro_$TEST_DISTRO_VERSION" "$WORKSPACE/test_reports/" "$BUILD_NUMBER"
       exit 0
-    fi
-
-    # RHEL 7.5 won't upgrade CentOS 7.3
-    if [[ ($JOB_NAME == upgrade-tests || $JOB_NAME == upgrade-tests/*) &&
-        $TEST_DISTRO_NAME != rhel ]]; then
-        fake_test_pass "upgrade-tests_skipped_on_centos7.3" "$WORKSPACE/test_reports/" "${BUILD_NUMBER}"
-        exit 0
     fi
 
 }  # end of check_for_autopass()

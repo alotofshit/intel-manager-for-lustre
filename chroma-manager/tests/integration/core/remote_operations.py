@@ -66,6 +66,7 @@ class RemoteOperations(object):
     def get_fence_nodes_list(self, address, ignore_failure=False):
         return ["fake", "fake"]
 
+
 class RealRemoteOperations(RemoteOperations):
 
     def __init__(self, test_case):
@@ -752,7 +753,7 @@ class RealRemoteOperations(RemoteOperations):
         """
         Unmount all filesystems of type lustre from all clients in the config.
         """
-        for client in config['lustre_clients'] + self.config_workers:
+        for client in config['lustre_clients']:
             self._ssh_address(client['address'],
                               'umount -t lustre -a')
             self._ssh_address(client['address'],
