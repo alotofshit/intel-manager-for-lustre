@@ -213,6 +213,7 @@ class UtilityTestCase(TestCase):
 
         """
 
+        import traceback
         try:
             return assert_test()
         except Exception as exception:
@@ -228,10 +229,13 @@ class UtilityTestCase(TestCase):
             elif hasattr(message, '__call__'):
                 message = message()
 
-            # First create the file, errors in here do destroy the original, but will be reported by the test framework
+            # First create the file, errors in here do destroy thew
+            # original, but will be reported by the test framework
             fd = os.open(key_file, os.O_RDWR | os.O_CREAT)
-            os.write(fd, "To: %s\nSubject: %s\n\n%s\n\nTest Runner %s" %
-                     (', '.join(tell_who), message, message, socket.gethostname()))
+            os.write(fd, "To: %s\nSubject: %s\n\n%s\n\nTest Runner %s\n\n"
+                     "Stacktrace of waiting location:\n%s" %
+                     (', '.join(tell_who), message, message,
+                      socket.gethostname(), traceback.print_stack()))
             os.lseek(fd, 0, os.SEEK_SET)
             subprocess.call(['sendmail'] + ['-t'], stdin=fd)
             os.close(fd)
