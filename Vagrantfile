@@ -3,16 +3,23 @@
 require 'etc'
 require "socket"
 
-fqdn = Socket.gethostname
-dot = fqdn.index(".")
-hostname = fqdn[0..dot-1]
-domain = fqdn[dot+1..-1]
-mach_num = hostname[6..fqdn.index(".") - 1]
-cluster_num = 0
-if cluster_num == 0
-    cluster_num_s = ""
+if ENV["JENKINS"] == "true"
+	ci_cluster = true
+	fqdn = Socket.gethostname
+	dot = fqdn.index(".")
+	hostname = fqdn[0..dot - 1]
+	domain = fqdn[dot + 1..-1]
+	mach_num = hostname[hostname.index("-") + 1..-1]
+	cluster_num = 0
+	if cluster_num == 0
+		cluster_num_s = ""
+	else
+		cluster_num_s = cluster_num
+	end
 else
-    cluster_num_s = cluster_num
+	ci_cluster = false
+	hostname = ""
+	cluster_num_s = ""
 end
 
 Vagrant.configure("2") do |config|
@@ -40,8 +47,10 @@ Vagrant.configure("2") do |config|
 	vdisk_root = "#{ENV['HOME']}/VirtualBox\ VMs/vdisks"
 
 	config.vm.provider :libvirt do |libvirt, override|
-		# prefix of what the VM will be named on the host
-		libvirt.default_prefix = "lotus-13vm"
+		if ci_cluster
+			# prefix of what the VM will be named on the host
+			libvirt.default_prefix = hostname
+		end
 		# use the "images" storage pool
 		libvirt.storage_pool_name = "images"
 		# 2G of RAM and 2 CPUS
@@ -60,7 +69,7 @@ Vagrant.configure("2") do |config|
 	# ct<vmax><vmin>: CentOS <vmax>.<vmin>, e.g. ct73 = CentOS 7.3
 	# rh<vmax><vmin>: RHEL <vmax>.<vmin>, e.g. rh73 = RHEL 7.3
 	# el<vmax><vmin>: Generic RHEL derivative <vmax>.<vmin>,
-	# 	e.g. el73 = RHEL/CentOS 7.3
+	#	e.g. el73 = RHEL/CentOS 7.3
 	# el<vmax>: Generic RHEL derivative <vmax>, e.g. el7 = RHEL/CentOS 7.x
 	# sl<vmax><vmin>: SLES <vmax> SP<vmin>, e.g. sl121 = SLES 12 sp1
 	# ub<vmax><vmin>: Ubuntu <vmax>.<vmin>, e.g. ub1604 = Ubuntu 16.04
@@ -112,7 +121,9 @@ Vagrant.configure("2") do |config|
 	# Add the generated SSH public key to each host's
 	# authorized_keys file.
 	config.vm.provision "file", source: "id_rsa.pub", destination: "/tmp/id_rsa.pub"
-	config.vm.provision "file", source: "site-authorized_keys", destination: "/tmp/authorized_keys"
+        if File.exist?("site-authorized_keys")
+		config.vm.provision "file", source: "site-authorized_keys", destination: "/tmp/authorized_keys"
+	end
 	config.vm.provision "shell", inline: "mkdir -m 0700 -p /root/.ssh; [ -f /tmp/id_rsa.pub ] && (awk -v pk=\"`cat /tmp/id_rsa.pub`\" 'BEGIN{split(pk,s,\" \")} $2 == s[2] {m=1;exit}END{if (m==0)print pk}' /root/.ssh/authorized_keys )>> /root/.ssh/authorized_keys; cat /home/vagrant/.ssh/authorized_keys /tmp/authorized_keys >> /root/.ssh/authorized_keys; chmod 0600 /root/.ssh/authorized_keys"
 
 	# And make the private key available
@@ -126,7 +137,7 @@ Vagrant.configure("2") do |config|
 	# world complexity levels
         config.vm.provision "fix /etc/hosts",
 		type: "shell",
-		inline: "set -x; sed -ie \"/^127.0.0.1/s/\$HOSTNAME  *//\" /etc/hosts /etc/hosts; cat /etc/hosts"
+		inline: "sed -ie \"/^127.0.0.1/s/\$HOSTNAME  *//\" /etc/hosts /etc/hosts"
 
 	# delete default gw on eth0
 	config.vm.provision "remove eth0 default route",
@@ -181,11 +192,17 @@ __EOF
 		vm3.vm.host_name = "#{hostname}vm#{cluster_num_s}3"
 		vm3.vm.network "forwarded_port", guest: 443, host: 8443
 		# Admin / management network
-		vm3.vm.network "public_network",
-		    :libvirt__dhcp_enabled => false,
-		    :type => 'bridge',
-		    :dev => 'br0',
-		    :mac => "525400%02dD9%d3" % [mach_num, cluster_num]
+		if ci_cluster
+			vm3.vm.network "public_network",
+			    :libvirt__dhcp_enabled => false,
+			    :type => 'bridge',
+			    :dev => 'br0',
+			    :mac => "525400%02dD9%d3" % [mach_num, cluster_num]
+		else
+			vm3.vm.network "private_network",
+				ip: "#{mgmt_net_pfx}.10",
+				netmask: "255.255.255.0"
+		end
 	end
 
 	#
@@ -197,11 +214,17 @@ __EOF
 		end
 		vm4.vm.host_name = "#{hostname}vm#{cluster_num_s}4"
 		# Admin / management network
-		vm4.vm.network "public_network",
-		    :libvirt__dhcp_enabled => false,
-		    :type => 'bridge',
-		    :dev => 'br0',
-		    :mac => "525400%02dD9%d4" % [mach_num, cluster_num]
+		if ci_cluster
+			vm4.vm.network "public_network",
+			    :libvirt__dhcp_enabled => false,
+			    :type => 'bridge',
+			    :dev => 'br0',
+			    :mac => "525400%02dD9%d4" % [mach_num, cluster_num]
+		else
+			vm4.vm.network "private_network",
+				ip: "#{mgmt_net_pfx}.8",
+				netmask: "255.255.255.0"
+		end
 	end
 
 	#
@@ -268,11 +291,17 @@ __EOF
 			end
 			ss.vm.host_name = "#{hostname}vm#{cluster_num_s}#{vm_num}"
 			# Admin / management network
-			ss.vm.network "public_network",
-				:libvirt__dhcp_enabled => false,
-				:type => 'bridge',
-				:dev => 'br0',
-				:mac => "525400%02dD9%d%d" % [mach_num, cluster_num, vm_num]
+			if ci_cluster
+				ss.vm.network "public_network",
+					:libvirt__dhcp_enabled => false,
+					:type => 'bridge',
+					:dev => 'br0',
+					:mac => "525400%02dD9%d%d" % [mach_num, cluster_num, vm_num]
+			else
+				ss.vm.network "private_network",
+					ip: "#{mgmt_net_pfx}.2#{ss_idx}",
+					netmask: "255.255.255.0"
+			end
 			# Lustre / application network
 			ss.vm.network "private_network",
 				ip: "#{lnet_pfx}.2#{ss_idx}",
@@ -301,11 +330,17 @@ __EOF
 		config.vm.define "vm#{c_idx}", autostart: true do |c|
 			c.vm.host_name = "#{hostname}vm#{cluster_num_s}#{c_idx}"
 			# Admin / management network
-			c.vm.network "public_network",
-				:libvirt__dhcp_enabled => false,
-				:type => 'bridge',
-				:dev => 'br0',
-				:mac => "525400%02dD9%d%d" % [mach_num, cluster_num, c_idx]
+			if ci_cluster
+				c.vm.network "public_network",
+					:libvirt__dhcp_enabled => false,
+					:type => 'bridge',
+					:dev => 'br0',
+					:mac => "525400%02dD9%d%d" % [mach_num, cluster_num, c_idx]
+			else
+				c.vm.network "private_network",
+					ip: "#{mgmt_net_pfx}.3#{c_idx}",
+					netmask: "255.255.255.0"
+			end
 			# Lustre / application network
 			c.vm.network "private_network",
 				ip: "#{lnet_pfx}.3#{c_idx}",
