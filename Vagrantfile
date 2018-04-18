@@ -39,14 +39,17 @@ Vagrant.configure("2") do |config|
 	#     it really only applies for the vbox provider
 	vdisk_root = "#{ENV['HOME']}/VirtualBox\ VMs/vdisks"
 
-	# use the "images" storage pool
 	config.vm.provider :libvirt do |libvirt, override|
+		# prefix of what the VM will be named on the host
+		libvirt.default_prefix = "lotus-13vm"
+		# use the "images" storage pool
+		libvirt.storage_pool_name = "images"
+		# 2G of RAM and 2 CPUS
+		libvirt.memory = 2048
+		libvirt.cpus = 2
 		override.vm.box = "centos/7"
 		# set to distro version desired for test
 		override.vm.box_version = "> 1708, < 9999"
-		libvirt.storage_pool_name = "images"
-		libvirt.memory = 2048
-		libvirt.cpus = 2
 	end
 
 	# Number of shared disk devices

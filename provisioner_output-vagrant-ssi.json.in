@@ -80,7 +80,7 @@
   },
   "provision": true,
   "hosts": {
-    "host": {
+    "@VMHOST@": {
       "virsh_as_root": false,
       "cluster_num": @CLUSTER_NUM@,
       "nodename": "@VMHOST@",
